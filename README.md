@@ -1,5 +1,7 @@
 # Bilfen AD'S UP — Görselden Videoya
 
+**Yayında:** https://bilfen.github.io/adsup-video/ — repoya her push'ta GitHub Pages kendiliğinden güncellenir.
+
 Bir görseli yükle; açık kaynak bir video modeli onu hareketli bir klibe çevirsin, sonuç MP4 olarak
 bilgisayara insin. Arayüz [lunaai.video](https://lunaai.video/tr/app) gibi tek sayfadır: solda görsel +
 hareket cümlesi + oran/süre, sağda sonuç sahnesi.
@@ -67,10 +69,11 @@ Okul bilgisayarında ortak kullanılıyorsa her öğrenci kendi anahtarını gir
 
 ## GitHub Pages ile yayınlama
 
-1. `index.html`, `app.js`, `i2v.js`, `assets/` klasörünü Bilfen GitHub hesabındaki repoya yükle.
-2. **Settings → Pages** → *Deploy from a branch* → `main` / `/(root)`.
-3. 1–2 dakika sonra `https://<kullanıcı>.github.io/<repo>/` yayında. Herkes açabilir; anahtar
-   tarayıcıda girilir, repoya yazılmaz.
+Site `bilfen/adsup-video` reposundan yayınlanıyor:
+
+1. Depoyu güncelle: `git push` (repo → **Settings → Pages** → *Deploy from a branch* → `main` / `/(root)`).
+2. 1–2 dakika sonra `https://bilfen.github.io/adsup-video/` güncellenir.
+3. Herkes açabilir; anahtar tarayıcıda girilir, repoya yazılmaz.
 
 `.env`, `serve.ps1` ve `dev-server.js` yalnızca yerel test içindir; yüklenmese de olur.
 

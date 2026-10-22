@@ -202,6 +202,8 @@ async function enhanceWithGemini(src) {
 }
 
 async function probeGemini() {
+  // Gemini yalnızca yerel sunucuda var; GitHub Pages'te bu istek gereksiz 404 üretirdi.
+  if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
   try {
     const r = await fetch("/api/health");
     if (!r.ok) return;
