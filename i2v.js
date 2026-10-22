@@ -51,6 +51,22 @@ export const DEFAULT_PROMPT = "cinematic, natural subtle motion, soft light";
 const DEFAULT_NEGATIVE =
   "blurry, low quality, distorted, deformed, watermark, text artifacts, shaky camera";
 
+// Vekil (proxy) tabanı: doluysa istekler oraya gider ve anahtar sunucuda durur.
+// Boşsa doğrudan Hugging Face'e gidilir ve tarayıcıdaki anahtar kullanılır.
+let PROXY = "";
+
+export function setProxyBase(url) {
+  PROXY = (url || "").replace(/\/+$/, "");
+}
+
+export function proxyActive() {
+  return !!PROXY;
+}
+
+function baseFor(model) {
+  return PROXY ? PROXY + "/hf" : model.base;
+}
+
 function sessionHash() {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
@@ -60,6 +76,8 @@ function sessionHash() {
 }
 
 function authHeaders(token) {
+  // Vekil kullanılıyorsa anahtar tarayıcıdan çıkmaz; vekil kendi sırrını ekler.
+  if (PROXY) return {};
   return token ? { Authorization: "Bearer " + token } : {};
 }
 
@@ -93,7 +111,7 @@ export async function prepareImage(file, aspect, model) {
 async function uploadImage(model, file, token) {
   const fd = new FormData();
   fd.append("files", file, file.name || "gorsel.jpg");
-  const r = await fetch(model.base + "/gradio_api/upload", {
+  const r = await fetch(baseFor(model) + "/gradio_api/upload", {
     method: "POST",
     body: fd,
     headers: authHeaders(token)
@@ -211,7 +229,7 @@ function findVideo(node, base) {
 }
 
 async function readQueue(model, session, token, onStatus, signal) {
-  const r = await fetch(model.base + "/gradio_api/queue/data?session_hash=" + encodeURIComponent(session), {
+  const r = await fetch(baseFor(model) + "/gradio_api/queue/data?session_hash=" + encodeURIComponent(session), {
     headers: Object.assign({ Accept: "text/event-stream" }, authHeaders(token)),
     signal
   });
@@ -323,7 +341,7 @@ export async function imageToVideo(opts) {
       trigger_id: Math.floor(Math.random() * 1e6) + 1,
       api_name: model.apiName
     };
-    const joinRes = await fetch(model.base + "/gradio_api/queue/join", {
+    const joinRes = await fetch(baseFor(model) + "/gradio_api/queue/join", {
       method: "POST",
       headers: Object.assign({ "Content-Type": "application/json" }, authHeaders(token)),
       body: JSON.stringify(body),
@@ -335,7 +353,7 @@ export async function imageToVideo(opts) {
     }
 
     const output = await readQueue(model, session, token, onStatus, ctrl.signal);
-    const videoUrl = findVideo(output, model.base);
+    const videoUrl = findVideo(output, baseFor(model));
     if (!videoUrl) throw new Error("Video dosyasının adresi gelmedi.");
 
     onStatus("Video indiriliyor…", 95);

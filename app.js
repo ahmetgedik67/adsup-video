@@ -2,10 +2,12 @@
 // Akış: görsel seç -> oran/süre/prompt -> Hugging Face ZeroGPU'da üret -> MP4 indir.
 // Anahtar yalnızca bu tarayıcının localStorage'ında tutulur, hiçbir yere gönderilmez (HF dışında).
 
-import { imageToVideo, MODELS, ASPECTS, DEFAULT_PROMPT } from "./i2v.js";
+import { imageToVideo, setProxyBase, MODELS, ASPECTS, DEFAULT_PROMPT } from "./i2v.js";
 
 const $ = (id) => document.getElementById(id);
+const PROXY_BASE = "https://site-dcca3a43a7864d4fb828083e02ccee9e.freebuff.page";
 const TOKEN_KEY = "adsup.hfToken";
+setProxyBase(PROXY_BASE);
 const DRIVE = { clientId: "", folderId: "", scope: "https://www.googleapis.com/auth/drive.file" };
 
 const state = {
@@ -49,7 +51,7 @@ function clearLog() {
 
 /* ---------------- anahtar (token) ---------------- */
 
-function tokenLabel() {
+function tokenLabel() { if (PROXY_BASE) { const el0 = $("tokenState"); if (el0) { el0.textContent = "Anahtar sunucuda tanımlı · öğrenci hiçbir şey girmiyor"; el0.className = "tokenState ok"; } ["tokenInput", "btnTokenKaydet", "btnTokenSil", "btnAyar"].forEach((id) => { const n = $(id); if (n) n.hidden = true; }); return; }
   const el = $("tokenState");
   if (!el) return;
   if (state.token) {
@@ -320,7 +322,7 @@ function showResult(url, meta) {
 async function run() {
   if (state.busy) return;
   if (!state.file) { setStatus("Önce bir görsel seç."); return; }
-  if (!state.token) {
+  if (!PROXY_BASE && !state.token) {
     setStatus("Üretim için Hugging Face anahtarı gerekiyor.");
     openSettings();
     return;
@@ -432,6 +434,7 @@ renderModel();
 renderAspect();
 tokenLabel();
 probeGemini();
-if (!state.token) setTimeout(() => { setStatus("Başlamak için Ayarlar'dan ücretsiz Hugging Face anahtarını ekle."); }, 600);
+if (PROXY_BASE) setStatus("Hazır — bir görsel seç, sonra Video üret'e bas.");
+else if (!state.token) setTimeout(() => { setStatus("Başlamak için Ayarlar'dan ücretsiz Hugging Face anahtarını ekle."); }, 600);
 
 window.__adsup = { state, setFile, run, openSettings };

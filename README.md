@@ -18,7 +18,22 @@ GPU kuyruğunda yapılır, tarayıcı yalnızca görseli yükler ve MP4'ü indir
 > LTX-Video da kodda hazır (`i2v.js` → `MODELS.ltx`) ama 22 Ekim 2026'da alan anahtarla bile üretim
 yapmadı; hata metnini `error: null` diye yuttuğu için arayüzde sunulmuyor.
 
-## Önce: ücretsiz Hugging Face anahtarı (tek seferlik)
+## Anahtar gerekmez — vekil sunucu
+
+Öğrenci hiçbir anahtar girmez, hesap açmaz. Sayfa, `proxy/worker.js` ile deploy edilen küçük bir
+Cloudflare Worker'a istek atar; Hugging Face anahtarı Worker sırrı (`HF_TOKEN`) olarak durur ve
+tarayıcıya hiç inmez.
+
+- Vekil adresi `app.js` içindeki `PROXY_BASE`; boş bırakılırsa sayfa eski (tarayıcıdaki anahtar) moduna döner.
+- Sağlık kontrolü: `GET /api/health` → `{"ok":true,"token":true}`
+- Yalnızca `https://bilfen.github.io` ve `http://localhost:8080` kaynaklarına CORS izni verilir; başka hedefe yönlendirme yok.
+- Yeni sürüm: `adsup3d/proxy/manifest.json` bu depoda; anahtarı değiştirmek için Sites panelinden `HF_TOKEN` sırrını güncelle.
+
+**Kota paylaşılır:** sınıfın tamamı aynı hesabın günlük hakkını kullanır (ücretsiz 5 dk, PRO 40 dk).
+Yetmezse sunucu tarafında ücretli bir sağlayıcıya (klip başına ~0,05 $) geçilebilir; sayfa tarafında
+tek satır değişir.
+
+## (Yedek) Kendi anahtarınla çalıştırma
 
 ZeroGPU, 2026 Ekim itibarıyla **giriş yapılmadan üretim yapmıyor**. Anahtarsız denemede servis şunu
 döndürüyor (ölçüldü):
