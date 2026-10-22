@@ -1,440 +1,63 @@
-// AD'S UP — görselden videoya (Luna tarzı tek sayfa)
-// Akış: görsel seç -> oran/süre/prompt -> Hugging Face ZeroGPU'da üret -> MP4 indir.
-// Anahtar yalnızca bu tarayıcının localStorage'ında tutulur, hiçbir yere gönderilmez (HF dışında).
-
-import { imageToVideo, setProxyBase, MODELS, ASPECTS, DEFAULT_PROMPT } from "./i2v.js";
-
 const $ = (id) => document.getElementById(id);
-const PROXY_BASE = "https://site-dcca3a43a7864d4fb828083e02ccee9e.freebuff.page";
-const TOKEN_KEY = "adsup.hfToken";
-setProxyBase(PROXY_BASE);
-const DRIVE = { clientId: "", folderId: "", scope: "https://www.googleapis.com/auth/drive.file" };
+const drop = $("drop"), fileInput = $("file"), preview = $("preview");
+const canvas = $("canvas"), ctx = canvas.getContext("2d", { alpha: false });
+const createBtn = $("create"), previewBtn = $("previewBtn"), status = $("status");
+const result = $("result"), empty = $("empty"), download = $("download"), progress = $("progress");
+const state = { image: null, fileName: "", motion: "cinema", aspect: "wide", previewing: false, recording: false, raf: 0, started: 0, outputUrl: "" };
+const formats = { wide: [16, 9], vertical: [9, 16], square: [1, 1] };
 
-const state = {
-  file: null,
-  model: "wan",
-  aspect: "yatay",
-  duration: MODELS.wan.defaultDuration,
-  steps: MODELS.wan.defaultSteps,
-  seed: null,
-  busy: false,
-  token: localStorage.getItem(TOKEN_KEY) || "",
-  driveToken: null
-};
+function setStatus(text, pct = null) { status.textContent = text; if (pct !== null) progress.style.width = `${Math.max(0, Math.min(100, pct))}%`; }
+function chooseMime() { return ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((t) => MediaRecorder.isTypeSupported(t)) || ""; }
+function canvasSize() { const q = Number($("quality").value); if (state.aspect === "wide") return q === 1080 ? [1920, 1080] : [1280, 720]; if (state.aspect === "vertical") return q === 1080 ? [1080, 1920] : [720, 1280]; return q === 1080 ? [1080, 1080] : [720, 720]; }
+function resizeCanvas() { const [w, h] = canvasSize(); canvas.width = w; canvas.height = h; $("stage").style.aspectRatio = formats[state.aspect].join("/"); }
+function coverRect(iw, ih, w, h, overscan = 1) { const scale = Math.max(w / iw, h / ih) * overscan, dw = iw * scale, dh = ih * scale; return [(w - dw) / 2, (h - dh) / 2, dw, dh]; }
+function containRect(iw, ih, w, h, scale = .88) { const s = Math.min((w * scale) / iw, (h * scale) / ih), dw = iw * s, dh = ih * s; return [-dw / 2, -dh / 2, dw, dh]; }
 
-const drop = $("drop"), preview = $("preview"), fileInput = $("fileInput");
-const btnOlustur = $("btnOlustur"), statusEl = $("status");
-const bar = $("bar"), barFill = $("barFill");
-const resultCard = $("resultCard"), videoEl = $("video"), dlBtn = $("dlBtn");
-const historyEl = $("history"), logEl = $("log");
-
-/* ---------------- durum / günlük ---------------- */
-
-function setStatus(text, pct) {
-  statusEl.textContent = text;
-  if (pct != null) {
-    bar.classList.add("on");
-    barFill.style.width = Math.max(3, Math.min(100, pct)) + "%";
-  }
+function drawFrame(seconds) {
+  if (!state.image) return;
+  const w = canvas.width, h = canvas.height, img = state.image, p = (seconds % 10) / 10;
+  const wave = Math.sin(p * Math.PI * 2), ease = .5 - .5 * Math.cos(p * Math.PI * 2);
+  ctx.save(); ctx.fillStyle = "#091421"; ctx.fillRect(0, 0, w, h);
+  ctx.filter = `blur(${Math.round(Math.max(w, h) * .018)}px) brightness(.48) saturate(1.15)`;
+  ctx.drawImage(img, ...coverRect(img.width, img.height, w, h, 1.12)); ctx.filter = "none";
+  ctx.fillStyle = "rgba(3,10,18,.22)"; ctx.fillRect(0, 0, w, h);
+  let zoom = 1, x = 0, y = 0, angle = 0;
+  if (state.motion === "cinema") { zoom = 1 + .12 * ease; x = (p - .5) * w * .05; y = -ease * h * .025; }
+  if (state.motion === "float") { zoom = 1.04 + .025 * wave; x = Math.cos(p * Math.PI * 2) * w * .018; y = wave * h * .035; angle = wave * .009; }
+  if (state.motion === "tilt") { zoom = 1.03 + .035 * ease; x = wave * w * .035; y = Math.cos(p * Math.PI * 2) * h * .018; angle = wave * .035; }
+  ctx.translate(w / 2 + x, h / 2 + y); ctx.rotate(angle); ctx.scale(zoom, zoom);
+  const fg = containRect(img.width, img.height, w, h); ctx.shadowColor = "rgba(0,0,0,.48)"; ctx.shadowBlur = Math.max(w, h) * .045; ctx.shadowOffsetY = h * .018; ctx.drawImage(img, ...fg); ctx.restore();
 }
 
-function log(msg) {
-  if (!logEl) return;
-  logEl.hidden = false;
-  logEl.textContent += msg + "\n";
-  logEl.scrollTop = 1e9;
+function previewLoop(now) { if (!state.previewing || state.recording) return; if (!state.started) state.started = now; drawFrame((now - state.started) / 1000); state.raf = requestAnimationFrame(previewLoop); }
+function startPreview() { if (!state.image || state.recording) return; result.hidden = true; canvas.hidden = false; empty.hidden = true; state.previewing = true; state.started = 0; cancelAnimationFrame(state.raf); state.raf = requestAnimationFrame(previewLoop); previewBtn.textContent = "⏸ Önizlemeyi durdur"; }
+function stopPreview() { state.previewing = false; cancelAnimationFrame(state.raf); previewBtn.textContent = "▶ Önizlemeyi oynat"; }
+
+async function loadFile(file) {
+  if (!file?.type.startsWith("image/")) return setStatus("PNG, JPG veya WebP türünde bir görsel seçin.");
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => { preview.src = url; preview.hidden = false; drop.classList.add("has"); state.image = img; state.fileName = file.name.replace(/\.[^.]+$/, "") || "adsup-animasyon"; resizeCanvas(); createBtn.disabled = false; previewBtn.disabled = false; setStatus(`Hazır: ${file.name} · Görsel cihazdan dışarı gönderilmeyecek.`, 0); startPreview(); };
+  img.onerror = () => { URL.revokeObjectURL(url); setStatus("Görsel açılamadı. Başka bir dosya deneyin."); }; img.src = url;
 }
 
-function clearLog() {
-  if (logEl) { logEl.textContent = ""; logEl.hidden = true; }
-}
-
-/* ---------------- anahtar (token) ---------------- */
-
-function tokenLabel() { if (PROXY_BASE) { const el0 = $("tokenState"); if (el0) { el0.textContent = "Anahtar sunucuda tanımlı · öğrenci hiçbir şey girmiyor"; el0.className = "tokenState ok"; } ["tokenInput", "btnTokenKaydet", "btnTokenSil", "btnAyar"].forEach((id) => { const n = $(id); if (n) n.hidden = true; }); return; }
-  const el = $("tokenState");
-  if (!el) return;
-  if (state.token) {
-    el.textContent = "Anahtar kayıtlı (" + state.token.slice(0, 3) + "…" + state.token.slice(-4) + ") · günde 5 dk ücretsiz GPU";
-    el.className = "tokenState ok";
-  } else {
-    el.textContent = "Anahtar yok · üretim başlatılamaz";
-    el.className = "tokenState warn";
-  }
-}
-
-function openSettings() {
-  const dlg = $("dlgAyar");
-  if (typeof dlg.showModal === "function") dlg.showModal();
-  else dlg.setAttribute("open", "");
-  $("tokenInput").value = "";
-  tokenLabel();
-}
-
-function closeSettings() {
-  const dlg = $("dlgAyar");
-  if (typeof dlg.close === "function") dlg.close();
-  else dlg.removeAttribute("open");
-}
-
-/* ---------------- dosya seçimi ---------------- */
-
-function setFile(f) {
-  if (!f || !f.type || !f.type.startsWith("image/")) {
-    setStatus("Yalnızca PNG, JPG veya WebP görsel seçebilirsin.");
-    return;
-  }
-  state.file = f;
-  preview.src = URL.createObjectURL(f);
-  preview.hidden = false;
-  drop.classList.add("has-file");
-  btnOlustur.disabled = state.busy;
-  setStatus("Görsel hazır: " + f.name + " · " + Math.round(f.size / 1024) + " KB");
-  log("Görsel seçildi: " + f.name);
-  renderEstimates();
+async function createVideo() {
+  if (!state.image || state.recording) return;
+  if (!window.MediaRecorder || !canvas.captureStream) return setStatus("Bu tarayıcı video kaydını desteklemiyor. Güncel Chrome veya Edge kullanın.");
+  stopPreview(); result.hidden = true; canvas.hidden = false; empty.hidden = true; resizeCanvas(); state.recording = true; createBtn.disabled = true; previewBtn.disabled = true;
+  const duration = Number($("duration").value), stream = canvas.captureStream(30), mime = chooseMime(), chunks = [];
+  const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: Number($("quality").value) === 1080 ? 10_000_000 : 6_000_000 } : undefined);
+  recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); }; const done = new Promise((resolve) => { recorder.onstop = resolve; }); recorder.start(250); const began = performance.now(); setStatus("Video cihazınızda hazırlanıyor…", 1);
+  await new Promise((resolve) => { function frame(now) { const elapsed = (now - began) / 1000; drawFrame(elapsed); setStatus(`Video hazırlanıyor: ${Math.min(duration, elapsed).toFixed(1)} / ${duration} sn`, elapsed / duration * 100); if (elapsed >= duration) resolve(); else requestAnimationFrame(frame); } requestAnimationFrame(frame); });
+  recorder.stop(); await done; stream.getTracks().forEach((t) => t.stop()); const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+  if (state.outputUrl) URL.revokeObjectURL(state.outputUrl); state.outputUrl = URL.createObjectURL(blob); result.src = state.outputUrl; result.hidden = false; canvas.hidden = true; result.play().catch(() => {}); download.href = state.outputUrl; download.download = `${state.fileName}-${state.motion}-${duration}sn.webm`; download.hidden = false; state.recording = false; createBtn.disabled = false; previewBtn.disabled = false; setStatus(`✓ Video hazır · ${(blob.size / 1024 / 1024).toFixed(1)} MB · kota kullanılmadı.`, 100);
 }
 
 drop.addEventListener("click", () => fileInput.click());
-drop.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
-});
-fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
-["dragover", "dragenter"].forEach((ev) =>
-  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
-["dragleave", "dragend"].forEach((ev) =>
-  drop.addEventListener(ev, () => drop.classList.remove("over")));
-drop.addEventListener("drop", (e) => {
-  e.preventDefault();
-  drop.classList.remove("over");
-  const f = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (f) setFile(f);
-});
-
-/* ---------------- seçenekler ---------------- */
-
-function renderModel() {
-  document.querySelectorAll("[data-model]").forEach((b) => {
-    const on = b.dataset.model === state.model;
-    b.classList.toggle("on", on);
-    b.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-  const m = MODELS[state.model];
-  $("modelNote").textContent = m.note;
-  // süre seçenekleri
-  state.duration = m.defaultDuration;
-  state.steps = m.defaultSteps;
-  const dur = $("duration");
-  dur.min = m.durations[0];
-  dur.max = m.durations[m.durations.length - 1];
-  dur.value = state.duration;
-  dur.step = state.model === "wan" ? 0.5 : 1;
-  $("durField").hidden = m.durations.length < 2;
-  $("stepsField").hidden = m.steps.length === 0;
-  $("steps").innerHTML = m.steps.map((s) => `<option value="${s}">${s} adım${s === 4 ? " (hızlı)" : s === 8 ? " (en iyi)" : ""}</option>`).join("");
-  renderDuration();
-  renderEstimates();
-}
-
-function renderDuration() {
-  const d = Number($("duration").value);
-  state.duration = d;
-  $("durOut").textContent = d.toFixed(d % 1 ? 1 : 0).replace(".", ",") + " sn";
-  renderEstimates();
-}
-
-function renderAspect() {
-  document.querySelectorAll("[data-aspect]").forEach((b) => {
-    const on = b.dataset.aspect === state.aspect;
-    b.classList.toggle("on", on);
-    b.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-  renderEstimates();
-}
-
-function renderEstimates() {
-  const m = MODELS[state.model];
-  const dims = (ASPECTS[state.aspect] || ASPECTS.yatay).dims[m.id];
-  const clips = Math.max(1, Math.floor(300 / (10 * Math.max(1, state.duration / 3.5))));
-  $("estimate").innerHTML =
-    `<span>` + dims[0] + " × " + dims[1] + ` piksel</span>` +
-    `<span>Ücretsiz hak: günde ~5 dk ≈ ~${clips} klip</span>`;
-}
-
-document.querySelectorAll("[data-model]").forEach((b) =>
-  b.addEventListener("click", () => { if (state.busy) return; state.model = b.dataset.model; renderModel(); }));
-document.querySelectorAll("[data-aspect]").forEach((b) =>
-  b.addEventListener("click", () => { if (state.busy) return; state.aspect = b.dataset.aspect; renderAspect(); }));
-$("duration").addEventListener("input", renderDuration);
-$("steps").addEventListener("change", () => { state.steps = Number($("steps").value); });
-
-/* ---------------- Gemini (yalnızca yerel sunucu) ---------------- */
-
-let geminiOk = false;
-
-async function shrinkForGemini(src) {
-  const bmp = await createImageBitmap(src);
-  const scale = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
-  const w = Math.max(1, Math.round(bmp.width * scale));
-  const h = Math.max(1, Math.round(bmp.height * scale));
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  c.getContext("2d").drawImage(bmp, 0, 0, w, h);
-  bmp.close?.();
-  const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.9));
-  if (!blob) throw new Error("Görsel küçültülemedi");
-  return new File([blob], "gorsel.jpg", { type: "image/jpeg" });
-}
-
-async function enhanceWithGemini(src) {
-  const small = await shrinkForGemini(src);
-  const buf = new Uint8Array(await small.arrayBuffer());
-  let bin = "";
-  for (let i = 0; i < buf.length; i += 0x8000) {
-    bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
-  }
-  const r = await fetch("/api/enhance", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mime: small.type || "image/jpeg", data: btoa(bin) })
-  });
-  if (!r.ok) throw new Error((await r.text()).slice(0, 180) || ("HTTP " + r.status));
-  const blob = await r.blob();
-  if (!blob.type.startsWith("image/")) throw new Error("Gemini görsel döndürmedi");
-  return new File([blob], "renkli.png", { type: blob.type });
-}
-
-async function probeGemini() {
-  // Gemini yalnızca yerel sunucuda var; GitHub Pages'te bu istek gereksiz 404 üretirdi.
-  if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
-  try {
-    const r = await fetch("/api/health");
-    if (!r.ok) return;
-    const j = await r.json();
-    geminiOk = !!j.gemini;
-    const row = $("geminiRow");
-    if (row) row.hidden = !geminiOk;
-  } catch { /* statik sayfa: Gemini yok */ }
-}
-
-/* ---------------- Google Drive ---------------- */
-
-function driveClientReady() {
-  return typeof google !== "undefined" && google.accounts && google.accounts.oauth2;
-}
-
-function getDriveToken() {
-  return new Promise((resolve, reject) => {
-    if (!driveClientReady()) return reject(new Error("Google modülü yüklenemedi"));
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: DRIVE.clientId,
-      scope: DRIVE.scope,
-      callback: (resp) => resp.error ? reject(new Error("Google oturumu reddedildi: " + resp.error)) : resolve(resp.access_token),
-      error_callback: (err) => reject(new Error(err.message || "Google oturumu açılamadı"))
-    });
-    client.requestAccessToken({ prompt: "" });
-  });
-}
-
-async function driveUpload(token, blob, name, mime) {
-  const boundary = "ADSUP" + Math.random().toString(36).slice(2);
-  const meta = { name, mimeType: mime };
-  if (DRIVE.folderId) meta.parents = [DRIVE.folderId];
-  const body = new Blob([
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`,
-    `--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,
-    blob,
-    `\r\n--${boundary}--\r\n`
-  ], { type: "multipart/related; boundary=" + boundary });
-  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + token },
-    body
-  });
-  const j = await r.json().catch(() => ({}));
-  if (r.status === 401) { state.driveToken = null; throw new Error("Oturum yenilenmeli (401)"); }
-  if (!r.ok) throw new Error("Drive hatası: " + ((j.error && j.error.message) || r.status));
-  return j;
-}
-
-async function saveToDrive(blob, btn) {
-  const original = btn.innerHTML;
-  try {
-    if (!DRIVE.clientId) {
-      btn.textContent = "☁ Ayarlar";
-      setStatus("Drive'a kaydetmek için öğretmenin Google Client ID ayarı gerekli (README).");
-      return;
-    }
-    btn.disabled = true;
-    btn.textContent = "☁ Yükleniyor…";
-    let token = state.driveToken || await getDriveToken();
-    let res;
-    try { res = await driveUpload(token, blob, "adsup-video.mp4", blob.type || "video/mp4"); }
-    catch (e) {
-      if (!/401|yenilenmeli/.test(e.message)) throw e;
-      token = await getDriveToken();
-      res = await driveUpload(token, blob, "adsup-video.mp4", blob.type || "video/mp4");
-    }
-    state.driveToken = token;
-    btn.textContent = "✔ Drive'da";
-    setStatus("✔ Google Drive'a kaydedildi: " + res.name);
-    log("Drive'a yüklendi: " + res.id);
-  } catch (err) {
-    btn.textContent = "⚠ Drive hatası";
-    setStatus("Drive'a kaydetme hatası: " + err.message);
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => { btn.innerHTML = original; }, 3500);
-  }
-}
-
-/* ---------------- üretim ---------------- */
-
-function addHistory(url, meta) {
-  const item = document.createElement("figure");
-  item.className = "hItem";
-  item.innerHTML =
-    `<video src="${url}" muted loop playsinline preload="metadata"></video>
-     <figcaption>${meta.model} · ${meta.duration} sn · ${meta.seconds ? meta.seconds + " sn üretim" : ""}</figcaption>`;
-  item.querySelector("video").addEventListener("mouseenter", (e) => e.target.play().catch(() => {}));
-  item.querySelector("video").addEventListener("mouseleave", (e) => { e.target.pause(); });
-  item.addEventListener("click", () => showResult(url, meta));
-  historyEl.prepend(item);
-  $("historyCard").hidden = false;
-  while (historyEl.children.length > 6) historyEl.lastChild.remove();
-}
-
-function showResult(url, meta) {
-  const empty = $("emptyStage");
-  if (empty) empty.hidden = true;
-  videoEl.src = url;
-  videoEl.play().catch(() => {});
-  dlBtn.href = url;
-  dlBtn.download = "adsup-video-" + Date.now() + ".mp4";
-  resultCard.hidden = false;
-  $("resultMeta").textContent =
-    MODELS[meta.model].label + " · " + meta.duration + " sn · " +
-    meta.aspect + " · " + Math.round(meta.kb) + " KB" +
-    (meta.seconds ? " · " + meta.seconds + " sn üretim" : "");
-  $("btnAgain").dataset.url = url;
-  resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-async function run() {
-  if (state.busy) return;
-  if (!state.file) { setStatus("Önce bir görsel seç."); return; }
-  if (!PROXY_BASE && !state.token) {
-    setStatus("Üretim için Hugging Face anahtarı gerekiyor.");
-    openSettings();
-    return;
-  }
-  state.busy = true;
-  btnOlustur.disabled = true;
-  btnOlustur.classList.add("busy");
-  clearLog();
-  const t0 = Date.now();
-  try {
-    let work = state.file;
-    if (geminiOk && $("geminiOn") && $("geminiOn").checked) {
-      setStatus("Gemini renkleri canlandırıyor…", 4);
-      try { work = await enhanceWithGemini(state.file); log("Gemini renkli görsel hazır"); }
-      catch (e) { log("Gemini atlandı: " + e.message); }
-    }
-    const seedRaw = ($("seed").value || "").trim();
-    const result = await imageToVideo({
-      file: work,
-      model: state.model,
-      aspect: state.aspect,
-      duration: Number($("duration").value),
-      steps: state.steps,
-      seed: seedRaw ? Number(seedRaw) : Math.floor(Math.random() * 1e6),
-      prompt: ($("prompt").value || "").trim(),
-      negative: ($("negative").value || "").trim(),
-      token: state.token,
-      onStatus: setStatus
-    });
-    setStatus("✔ Video hazır · " + result.ms + " sn", 100);
-    const url = URL.createObjectURL(result.blob);
-    const meta = {
-      model: state.model,
-      aspect: ASPECTS[state.aspect].label,
-      duration: Number($("duration").value),
-      kb: result.blob.size / 1024,
-      seconds: result.ms
-    };
-    showResult(url, meta);
-    addHistory(url, meta);
-    log("Video hazır: " + Math.round(meta.kb) + " KB, " + result.ms + " sn");
-    saveLocal(result.blob);
-  } catch (err) {
-    setStatus("Hata: " + (err && err.message ? err.message : err));
-    log("Hata: " + (err && err.message ? err.message : err));
-    bar.classList.remove("on");
-  } finally {
-    state.busy = false;
-    btnOlustur.disabled = false;
-    btnOlustur.classList.remove("busy");
-    void t0;
-  }
-}
-
-function saveLocal(blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "adsup-video-" + Date.now() + ".mp4";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-/* ---------------- olaylar ---------------- */
-
-btnOlustur.addEventListener("click", run);
-$("btnAyar").addEventListener("click", openSettings);
-$("btnAyarKapat").addEventListener("click", closeSettings);
-$("dlgAyar").addEventListener("click", (e) => { if (e.target.id === "dlgAyar") closeSettings(); });
-$("btnTokenKaydet").addEventListener("click", () => {
-  const v = ($("tokenInput").value || "").trim();
-  if (!/^hf_[A-Za-z0-9]{20,}$/.test(v)) {
-    $("tokenMsg").textContent = "Anahtar hf_ ile başlamalı. Hugging Face → Settings → Access Tokens.";
-    return;
-  }
-  state.token = v;
-  localStorage.setItem(TOKEN_KEY, v);
-  $("tokenMsg").textContent = "Anahtar kaydedildi. Bu tarayıcıda kalır, başka yere gitmez.";
-  $("tokenInput").value = "";
-  tokenLabel();
-});
-$("btnTokenSil").addEventListener("click", () => {
-  state.token = "";
-  localStorage.removeItem(TOKEN_KEY);
-  $("tokenMsg").textContent = "Anahtar silindi.";
-  tokenLabel();
-});
-$("btnAgain").addEventListener("click", run);
-$("dlBtn").addEventListener("click", () => {
-  const url = videoEl.src;
-  if (!url) return;
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "adsup-video-" + Date.now() + ".mp4";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-});
-$("btnDrive").addEventListener("click", (e) => {
-  fetch(videoEl.src).then((r) => r.blob()).then((b) => saveToDrive(b, e.currentTarget)).catch(() => {});
-});
-
-/* ---------------- başlangıç ---------------- */
-
-$("prompt").value = "";
-$("prompt").placeholder = DEFAULT_PROMPT + " — ör. hair moves gently, camera pushes in slowly";
-renderModel();
-renderAspect();
-tokenLabel();
-probeGemini();
-if (PROXY_BASE) setStatus("Hazır — bir görsel seç, sonra Video üret'e bas.");
-else if (!state.token) setTimeout(() => { setStatus("Başlamak için Ayarlar'dan ücretsiz Hugging Face anahtarını ekle."); }, 600);
-
-window.__adsup = { state, setFile, run, openSettings };
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+fileInput.addEventListener("change", () => loadFile(fileInput.files[0]));
+["dragenter", "dragover"].forEach((name) => drop.addEventListener(name, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((name) => drop.addEventListener(name, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => loadFile(e.dataTransfer.files[0]));
+document.querySelectorAll("[data-motion]").forEach((button) => button.addEventListener("click", () => { state.motion = button.dataset.motion; document.querySelectorAll("[data-motion]").forEach((b) => b.classList.toggle("on", b === button)); startPreview(); }));
+document.querySelectorAll("[data-aspect]").forEach((button) => button.addEventListener("click", () => { state.aspect = button.dataset.aspect; document.querySelectorAll("[data-aspect]").forEach((b) => b.classList.toggle("on", b === button)); resizeCanvas(); startPreview(); }));
+$("quality").addEventListener("change", () => { resizeCanvas(); startPreview(); }); previewBtn.addEventListener("click", () => state.previewing ? stopPreview() : startPreview()); createBtn.addEventListener("click", createVideo);
