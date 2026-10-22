@@ -37,3 +37,10 @@ Model ağırlıkları Stability AI Community License kapsamındadır. Eğitim, a
 5. **GLB indir** veya **10 sn video kaydet** seçeneğini kullanın.
 
 Bu sürüm Tencent/Hunyuan, ücretli API, erişim tokenı veya bulut üretim kotası kullanmaz.
+
+## Neden Pixal3D veya FloorplanToBlender3d değil?
+
+- **Pixal3D**, Python, PyTorch, CUDA, NATTEN ve TRELLIS.2 kurulumu gerektirir. Statik GitHub Pages sayfasında öğrencinin tarayıcısında çalışmaz; çevrimiçi çalıştırmak için GPU sunucusu gerekir.
+- **FloorplanToBlender3d**, genel nesne/fotoğraf dönüşümü için değil, kat planlarını Blender sahnesine çevirmek içindir. Blender, Python veya Docker çalışan bir sunucu gerektirir.
+
+Bu nedenle öğrencilere gerçekten anahtarsız ve kredisiz sunulabilen tarayıcı tarafı seçenek olarak **SF3D WebGPU** kullanılmıştır. Hesap veya kullanım kotası yoktur; karşılığı, ilk kullanımda büyük model indirmesi ve güçlü bir bilgisayar gerektirmesidir.
