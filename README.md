@@ -1,29 +1,39 @@
-# Bilfen AD'S UP — Sınırsız Animasyon Videosu
+# Bilfen AD'S UP — Renkli Gerçek 3B ve Video
 
 **Canlı site:** https://bilfen.github.io/adsup-video/
 
-Bir fotoğrafı veya çizimi tarayıcı içinde hareketli videoya dönüştürür. Sistem tamamen statiktir ve öğrencinin cihazında çalışır.
+Tek bir fotoğraf veya çizimden ön, yan ve arka yüzleri bulunan, renkli dokulu gerçek bir 3B model üretir. Model tarayıcıda döndürülebilir, GLB olarak indirilebilir ve 10 saniyelik video olarak kaydedilebilir.
 
 ## Özellikler
 
-- API anahtarı, token, hesap veya oturum gerekmez.
-- Günlük kota, kredi, sıra ve ücret yoktur.
-- Görsel herhangi bir sunucuya yüklenmez.
-- Sinematik yakınlaşma, süzülme ve 3B eğim hareketleri.
-- Yatay, dikey ve kare video.
-- 5, 10 veya 15 saniye; HD ve Full HD seçenekleri.
-- Sonuç WebM olarak indirilir.
+- Gerçek üç boyutlu, renkli ve dokulu GLB üretimi.
+- API anahtarı, token, kullanıcı hesabı veya günlük kota yoktur.
+- Üretim öğrencinin ekran kartında WebGPU ile gerçekleşir.
+- Görsel üretim sırasında başka bir sunucuya yüklenmez.
+- 3B model fareyle her yönden incelenebilir.
+- Dönen model WebM video olarak kaydedilebilir.
+
+## Gereksinimler
+
+- WebGPU destekli güncel Chrome veya Edge.
+- En az 8 GB sistem belleği; güçlü tümleşik veya ayrı ekran kartı önerilir.
+- İlk kullanımda yaklaşık 2,1 GB açık model ağırlığı indirilir ve tarayıcı önbelleğine alınır.
+- Üretim süresi bilgisayara göre yaklaşık 30 saniye ile birkaç dakika arasında değişebilir.
+
+Telefonlar, eski bilgisayarlar veya WebGPU kapalı tarayıcılar bu modeli çalıştıramayabilir.
 
 ## Nasıl çalışır?
 
-Canvas her kareyi öğrencinin tarayıcısında çizer. `canvas.captureStream()` ve `MediaRecorder` bu kareleri video dosyasına dönüştürür. Bulut yapay zekâ modeli veya harici GPU kullanılmadığı için token ve kullanım limiti yoktur.
+Uygulama [SF3D WebGPU](https://github.com/lyonsno/sf3d-webgpu) motorunu kullanır. Model ağırlıkları ilk çalıştırmada [BasinShapers/sf3d-webgpu-weights](https://huggingface.co/BasinShapers/sf3d-webgpu-weights) deposundan indirilir. İndirme doğrudan açık dosyadır; API anahtarı veya hesap gerekmez.
 
-Bu sürüm yeni görüntüler üreten bir yapay zekâ video modeli değildir. Yüklenen görseli sinematik kamera ve katman hareketleriyle animasyonlaştırır. Bu ayrım arayüzde açıkça belirtilir.
+Model ağırlıkları Stability AI Community License kapsamındadır. Eğitim, araştırma ve yıllık geliri 1 milyon ABD dolarının altındaki ticari kullanımlar için ücretsizdir.
 
-## Tarayıcı desteği
+## Kullanım
 
-Güncel Chrome veya Edge önerilir. Full HD kayıt eski cihazlarda yavaş olabilir; bu durumda HD 720p seçilmelidir.
+1. Sade arka planlı, tek nesneli bir PNG/JPG seçin.
+2. **Gerçek 3B Model Üret** düğmesine basın.
+3. İlk kullanımda model indirmesinin tamamlanmasını bekleyin.
+4. Renkli modeli fareyle döndürün.
+5. **GLB indir** veya **10 sn video kaydet** seçeneğini kullanın.
 
-## Yayınlama
-
-Repo GitHub Pages üzerinde `main` dalının kök klasöründen yayınlanır. Saf HTML, CSS ve JavaScript kullanır; derleme adımı yoktur.
+Bu sürüm Tencent/Hunyuan, ücretli API, erişim tokenı veya bulut üretim kotası kullanmaz.
